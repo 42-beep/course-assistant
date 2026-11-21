@@ -9,8 +9,13 @@
     python -m core.worker --concurrency 1 &
     python -m core.worker --concurrency 1 &
 
-    # 或者一台机器只跑 API，把 worker 放到别的机器（共享同一个 data/app.db）
+    # 或者只跑 API、worker 单独开进程（同一台机器）
     WORKER_INLINE=0 python -m uvicorn app:app --port 8000
+
+**不能跨机器。** SQLite 的并发靠本地文件锁和 WAL 的 -shm 共享内存，
+放在 NFS / SMB 这类网络文件系统上会静默损坏数据。要放到第二台机器上跑
+worker，先换 PostgreSQL（只改 core/store.py）或加 Redis 做队列——
+这条是边界，不是待办。
 
 ## 三个必须处理的细节
 
