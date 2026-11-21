@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>课程助手 · 需要口令</title>
+<style>
+  :root{--bg:#f7f7fa;--card:#fff;--ink:#1b1d23;--ink2:#4a4f5c;--ink3:#8b90a0;
+        --line:#e6e7ee;--accent:#3b5bdb;--warn:#c0392b}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+       background:var(--bg);color:var(--ink);
+       font:15px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding:24px}
+  .card{width:100%;max-width:380px;background:var(--card);border:1px solid var(--line);
+        border-radius:14px;padding:32px 28px;box-shadow:0 2px 24px rgba(27,29,35,.06)}
+  h1{margin:0 0 6px;font-size:19px;letter-spacing:.2px}
+  p{margin:0 0 22px;color:var(--ink3);font-size:13px}
+  input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:9px;
+        font-size:15px;font-family:inherit;letter-spacing:1px;outline:none;background:#fbfbfd}
+  input:focus{border-color:var(--accent);background:#fff}
+  button{width:100%;margin-top:14px;padding:11px;border:0;border-radius:9px;cursor:pointer;
+         background:var(--accent);color:#fff;font-size:15px;font-family:inherit}
+  button:hover{background:#2f4bc4}
+  .err{margin-top:14px;color:var(--warn);font-size:13px;display:none}
+  .foot{margin-top:22px;padding-top:16px;border-top:1px solid var(--line);
+        color:var(--ink3);font-size:12px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>课程助手</h1>
+  <p>这个地址是别人分享给你的，需要访问口令。</p>
+  <form method="post" action="/login" autocomplete="off">
+    <input name="k" placeholder="访问口令" autofocus required>
+    <button type="submit">进入</button>
+  </form>
+  <div class="err" id="err">口令不对，再试一次。</div>
+  <div class="foot">
+    不知道口令？问分享链接给你的人。<br>
+    口令只用来挡住路过的人，不是账号密码，别在别处重复使用。
+  </div>
+</div>
+<script>
+  if (new URLSearchParams(location.search).get('e')) {
+    document.getElementById('err').style.display = 'block';
+  }
+</script>
+</body>
+</html>

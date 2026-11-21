@@ -303,6 +303,14 @@ const $ = id => document.getElementById(id);
 let currentTask = null, currentResult = null;
 let pollTimer = null;
 
+// 口令被换掉或过期时，所有接口都会 401。统一回登录页，
+// 否则会卡在「生成中…」一直转圈，看不出是权限问题。
+const _fetch = window.fetch.bind(window);
+window.fetch = (u, o) => _fetch(u, o).then(r => {
+  if (r.status === 401) location.href = '/';
+  return r;
+});
+
 const todayPlus = n => {
   const d = new Date(); d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
@@ -317,9 +325,15 @@ function esc(s) {
 // 配置状态
 function refreshCfgHint() {
   fetch('/api/config').then(r => r.json()).then(c => {
-    $('cfgHint').innerHTML = c.llm_available
-      ? `模型：<b>${esc(c.model)}</b> · <a href="#" id="openCfg" style="color:var(--teal)">修改</a>`
-      : `未配置模型（规则模式）· <a href="#" id="openCfg" style="color:var(--teal)">点这里填 key</a>`;
+    // 同学那边（admin=false）不显示改模型的入口，点了也是 403
+    const link = c.admin
+      ? (c.llm_available
+          ? ` · <a href="#" id="openCfg" style="color:var(--teal)">修改</a>`
+          : ` · <a href="#" id="openCfg" style="color:var(--teal)">点这里填 key</a>`)
+      : ' · 由管理员在本机配置';
+    $('cfgHint').innerHTML = (c.llm_available
+      ? `模型：<b>${esc(c.model)}</b>`
+      : `未配置模型（规则模式）`) + link;
     const a = $('openCfg');
     if (a) a.onclick = e => { e.preventDefault(); toggleCfg(true); };
   }).catch(() => {});
