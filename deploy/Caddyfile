@@ -1,0 +1,37 @@
+# Caddy 配置：自动申请并续期 HTTPS 证书，反代到本机的 8000
+
+# 改这一行为你的域名（必须已解析到这台服务器，且已通过备案）
+course.example.com {
+	encode gzip
+	reverse_proxy 127.0.0.1:8000
+
+	# 上传课件可能比较慢，放宽读写超时
+	timeouts {
+		read_body 10m
+		idle 5m
+	}
+
+	# 基本的安全响应头
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/course-assistant.log
+		format console
+	}
+}
+
+# ---- 关于限流 ----
+# Caddy 本身不带限流。公网暴露后，口令接口会被反复尝试。
+# 简单做法（二选一）：
+#
+# 1. 用 Caddy 的 rate_limit 插件（需重新编译 caddy）：
+#      apt install -y caddy
+#      caddy add-package github.com/mholt/caddy-ratelimit
+#
+# 2. 更省事：在 fail2ban 里盯 nginx/caddy 日志里的 401，连续失败就封 IP。
+#    对「给几个同学用」这个量级，口令够长（12 位以上）基本就够，
+#    限流是锦上添花，不是必需。
