@@ -254,11 +254,100 @@ set ACCESS_CODE=abc123,def456,ghi789 && python run_lan.py
 
 - **口令不是账号。** 它挡的是「路过的人」，不是有备而来的人。别在别处复用
 - **数据在一台机器上。** 你关机，所有人都用不了；换台设备就读不到历史
-- **任务表在内存里。** 服务重启，正在跑的任务丢失（已完成的存了 JSON，不受影响）
-- **没有限流。** 有人狂点生成，烧的是你的 API 额度
+- **单个用户没有限流。** 有人狂点生成，烧的还是你的 API 额度（并发上限有，按人算的配额没有）
+- **多机仍然不行。** 状态已经落库了，但库是本机的 SQLite 文件——见「一·九」
 
-要真正给一个班用，得换掉三样东西：会话和任务落 SQLite、加真正的登录、后台任务移出进程。
-那是另一个项目的工作量，现在这个定位是「一个人分享给身边几个人用两三周」。
+真正给一个班用还缺两样：真实登录（现在只有口令）、按用户的配额。
+其余两样（状态落库、任务移出 API 进程）已经做了，见下一节。
+
+---
+
+## 一·九、把状态搬进数据库（多实例 / 多 worker）
+
+改造前，状态散在三个地方，而三处都隐含「只有一个进程」的假设：
+
+| 原来 | 问题 |
+|---|---|
+| `TASKS: dict`（进程内存） | 第二个进程看不见；服务重启，跑到一半的任务凭空消失 |
+| `sessions/*.json` | 两个请求同时写，`listdir` 可能读到写了一半的文件 |
+| `_SLOTS` 信号量 | 进程内的锁，多实例各算各的，限流等于没做 |
+
+现在全部收进 `data/app.db`（SQLite，WAL 模式）。**API 进程变成无状态的**，
+所以可以随便杀、随便多开。
+
+### 任务队列：租约锁
+
+抢任务的整段在一个事务里：
+
+```sql
+BEGIN IMMEDIATE;
+SELECT id FROM jobs
+ WHERE (status='pending' AND lease_until <= now)
+    OR (status='running' AND lease_until <  now)   -- 上个 worker 崩了
+ ORDER BY id LIMIT 1;
+UPDATE jobs SET status='running', worker=?, lease_until=now+900, attempts=attempts+1;
+COMMIT;
+```
+
+两个 worker 同时抢，只有一个能改到这行——这就是分布式锁最朴素的形式，
+不需要 Redis，SQLite 的行锁就够。
+
+`lease_until` 解决「抢到任务后崩了」：租约到期，任务回到可抢状态被别人捡走。
+所以语义是 **at-least-once**（至少执行一次），不是 exactly-once。
+重复执行会重复调模型（多花钱），所以 `max_attempts` 默认只有 2，
+宁可标失败让用户重提交。
+
+### 三种跑法
+
+```bash
+# 1. 单机（默认，和改造前一模一样：一条命令，任务自己就跑）
+python -m uvicorn app:app --port 8000
+
+# 2. API 和任务分离（推荐：上传/轮询不再被解析卡住）
+WORKER_INLINE=0 python -m uvicorn app:app --port 8000
+python -m core.worker --concurrency 2
+
+# 3. 一台机器多个 worker（共用一个 data/app.db）
+python -m core.worker --concurrency 2   # 终端 A
+python -m core.worker --concurrency 2   # 终端 B
+```
+
+### 可观测：第 ⑧ 层
+
+`/api/metrics`（仅本机）返回任务/队列/worker 状态和最近 40 条结构化日志：
+
+```json
+{
+  "stats": {"tasks": {"done": 5}, "jobs": {"done": 5}, "avg_task_seconds": 11.2},
+  "queue_depth": 0,
+  "workers": [{"id": "洛-79520-ce8b", "jobs_done": 2}],
+  "legal_queue": true,
+  "recent_logs": [{"event": "pipeline.guidance", "ms": 5955.8, "ok": true}]
+}
+```
+
+两个设计决定值得说：
+
+- **指标从状态表算，不另存一份。** 否则迟早出现「指标和真实状态对不上」
+  这种最难查的问题
+- **日志是 JSONL**（`data/logs/app-YYYYMMDD.jsonl`）。用 `os.write` + `O_APPEND`
+  单次写保证多进程不互相截断；接 Loki / ELK 时不用改代码
+
+`legal_queue` 是给部署用的：**队列里有活但没有活着的 worker**（超过 30 秒没心跳）
+就为 false。这个字段救过人——把 `WORKER_INLINE` 关了却忘了起 worker 时，
+任务会静默地永远停在「排队中」，光看日志不容易发现。
+
+### 为什么还是 SQLite，不是 Postgres
+
+一台 2C2G 上多跑一个 PG 进程不值得。WAL 模式支持多进程并发读写，
+几十个任务完全够用。
+
+**换 Postgres 只需要改 `core/store.py`**：所有 SQL 都收在那一个文件里，
+业务代码只调 `store.xxx()` / `queue.xxx()`。队列也一样——`claim()`
+换成 Redis 的 Lua 脚本就行，接口就一个方法。
+
+这里**没有**写 Redis 实现：本机没有 Redis，写了也验证不了。
+写一个跑不起来的「分布式组件」，不如留一个明确的切点。
 
 ---
 
@@ -361,7 +450,7 @@ set ACCESS_CODE=abc123,def456,ghi789 && python run_lan.py
 
 ```
 course-assistant/
-├── app.py               FastAPI 路由 + 五阶段流水线编排
+├── app.py               FastAPI 路由（无状态：只写库 + 投递任务）
 ├── config.json          模型配置（可选，自己建）
 ├── core/
 │   ├── llm.py           OpenAI 兼容调用 / JSON 重试 / 无 key 降级
@@ -372,19 +461,27 @@ course-assistant/
 │   ├── schedule.py      容量计算 / 权重裁剪 / 拓扑排序 / 分天  ← 核心算法
 │   ├── video.py         B 站视频检索 + 相关性过滤 + 质量排序
 │   ├── access.py        口令准入 / 本机判定 / 归属隔离  ← 分享时才有用
-│   └── generate.py      学习说明、易错点、资源建议
+│   ├── generate.py      学习说明、易错点、资源建议
+│   ├── pipeline.py      七阶段流水线（被 worker 调用，不在 API 进程里）
+│   ├── store.py         统一存储层：任务 / 会话 / 队列  ← 换 PG 只改这里
+│   ├── queue.py         任务队列：租约锁 + 重试 + worker 存活探测
+│   ├── worker.py        独立 worker 进程（python -m core.worker）
+│   └── obs.py           结构化日志 + 耗时埋点
 ├── tests/
 │   ├── test_merge.py    合并逻辑（别名该合、上下位不该合、模型挂了要降级）
 │   ├── test_video.py    视频推荐（三个坑各有对应用例钉住）
-│   └── test_access.py   访问控制（口令、本机特权、跨人隔离）
+│   ├── test_access.py   访问控制（口令、本机特权、跨人隔离）
+│   └── test_queue.py    队列（并发不重抢、崩溃能回收、状态跨进程可见）
 ├── web/
 │   ├── index.html       单页前端（原生 JS，无构建）
 │   └── login.html       口令登录页（只在开放分享时出现）
 ├── run_lan.py           局域网分享模式：探测内网 IP + 生成口令
 └── data/
+    ├── app.db           SQLite（任务 / 会话 / 队列 / worker 心跳）
     ├── uploads/         上传的原始文件
+    ├── logs/            结构化日志（JSONL，按天切）
     ├── video_cache.json 视频检索缓存（7 天）
-    └── sessions/        每次分析结果（JSON，可回溯）
+    └── sessions/        老版本的 JSON 结果，首次启动自动导入后就只剩备份作用
 ```
 
 跑测试：
@@ -393,8 +490,11 @@ course-assistant/
 python -m unittest discover -s tests -v
 ```
 
-44 个用例，钉住三件容易改坏的事：**别名该合的合、不该合的不合**、
-**推荐的视频必须真的在讲那个知识点**、**别人进不来也看不到彼此的数据**。
+59 个用例，钉住四件容易改坏的事：**别名该合的合、不该合的不合**、
+**推荐的视频必须真的在讲那个知识点**、**别人进不来也看不到彼此的数据**、
+**两个 worker 抢不到同一个任务、抢完崩了任务还能被捡回来**。
+
+最后一条用真正的子进程测——同进程读同一个 SQLite 永远成功，证明不了任何事。
 
 ### 接口
 
@@ -406,10 +506,11 @@ python -m unittest discover -s tests -v
 | POST | `/api/config` | 保存模型配置 | **仅本机** |
 | POST | `/api/config/test` | 用当前填的或临时配置真发一次请求，验证 key 是否可用 | **仅本机** |
 | POST | `/api/analyze` | 上传并分析。`files` 资料（可重复，≤10 份）、`exam_files` 真题（可重复，≤5 份），立即返回 task_id | 有口令 |
-| GET | `/api/task/{id}` | 轮询进度 | 自己的任务 |
+| GET | `/api/task/{id}` | 轮询进度（排队时带「前面还有 N 个」） | 自己的任务 |
 | GET | `/api/result/{id}` | 取结果 | 自己的任务 |
 | POST | `/api/rerun` | 只换考试日期重算（不重跑解析和抽取） | 自己的任务 |
 | GET | `/api/history` | 历史记录 | 只有自己的 |
+| GET | `/api/metrics` | 任务/队列/worker 状态 + 最近日志 | **仅本机** |
 
 `/api/rerun` 是产品里最有用的一个接口：同一份资料，
 把日期从 30 天后改成 3 天后，几秒钟就能看到完全不同的方案。
@@ -425,10 +526,10 @@ python -m unittest discover -s tests -v
 | 规则模式的打分是启发式 | 只能作为兜底，认真用请配模型 |
 | 同义合并依赖名字 | 名字完全不同但概念相同的（「快速卷积」和「FFT 求卷积」），两路都合不了 |
 | 视频接口不是官方的 | B 站网页端接口，随时可能加签名。挂了就降级为「本次没有视频」 |
-| 口令不是账号体系 | 挡的是路过的人，挡不住有备而来的人。要真账号得加数据库 |
-| 分享依赖你这台机器 | 你关机别人就用不了；历史也只在这台机器上 |
+| 口令不是账号体系 | 挡的是路过的人，挡不住有备而来的人。要真账号得加账号表 |
+| 分享依赖你这台机器 | 你关机别人就用不了；库是本机 SQLite，多机要换 Postgres |
 | 视频质量靠规则筛 | 相关性靠标题字面匹配，标题写得含糊的好视频可能被漏掉 |
-| 没有持久化数据库 | 结果存成 JSON 文件，够本地用 |
+| 队列是 at-least-once | worker 中途崩溃会重跑，模型调用会重复计费。所以重试上限只有 2 |
 
 ---
 
@@ -439,10 +540,11 @@ python -m unittest discover -s tests -v
 1. ~~**接真题**~~：已完成，见「一·六」
 2. ~~**多资料合并**~~：已完成，见「一·五」
 3. ~~**配套视频**~~：已完成，见「一·七」
-4. **每日打卡**：计划表按天推给用户，勾掉已完成
-5. **保存多套配置**：现在只记一套 key，切换厂商要重填
-6. **扫描件 OCR**：接 RapidOCR
-7. **部署上线**：加登录和云存储，给同学用
+4. ~~**状态落库 + 任务队列 + 可观测**~~：已完成，见「一·九」
+5. **按用户配额**：现在只有并发上限，按人算的每日额度还没有
+6. **每日打卡**：计划表按天推给用户，勾掉已完成
+7. **扫描件 OCR**：接 RapidOCR
+8. **换 Postgres**：真要多机部署时改 `core/store.py` 一个文件
 
 ---
 
@@ -451,9 +553,11 @@ python -m unittest discover -s tests -v
 一句话版本：
 
 > 一个把「课程资料 + 剩余备考时间」转成逐日复习计划的应用。
-> 核心是六阶段流水线：文档解析、知识点建图、时间倒排、内容生成、配套视频。
+> 核心是七阶段流水线：文档解析、知识点建图、时间倒排、内容生成、配套视频。
 > 其中时间倒排是纯算法实现（拓扑排序 + 权重裁剪），不依赖模型，
 > 保证计划可复现、每一条都能解释；每个知识点还挂着真在讲它的 B 站视频。
+> 服务侧做成无状态的：状态落 SQLite，任务走独立 worker 进程，
+> 多个 worker 用租约锁抢任务，进程崩了任务会被自动回收。
 
 被追问时能展开的点：
 
@@ -471,6 +575,14 @@ python -m unittest discover -s tests -v
   「句法复杂度分析器」——两个坑分别用「核心词分开处理」和「缩写必须命中」解决；
   过了门槛之后才比时长和播放量
 - **怎么保证不丢内容**：最后一道兜底，剩余知识点压缩塞进最后一个学习日
+- **任务怎么做到不丢**：状态全部落 SQLite（WAL），API 进程无状态，随时可杀。
+  抢任务用「租约锁」——`BEGIN IMMEDIATE` 里 SELECT + UPDATE 改 `lease_until`，
+  多个 worker 抢同一行只有一个能改到；worker 崩了租约到期，任务被自动回收。
+  牺牲的是 exactly-once（会重跑，模型重复计费），换的是不丢任务，
+  所以重试上限只有 2
+- **怎么知道线上有没有出问题**：`/api/metrics` 里的 `legal_queue`——
+  队列有活但没有活着的 worker（30 秒没心跳）就为 false。这个字段真的救过一次：
+  关掉内嵌 worker 却忘了起独立 worker，任务会静默地卡在排队
 
 这个项目里真正值得讲的不是"用了大模型"，而是**哪几处故意不让大模型做决定**：
 排期不让它做（要可复现）、同义合并让它提议但不让它拍板（要可审计）、

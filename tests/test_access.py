@@ -4,17 +4,29 @@
   1. 没开口令时，行为和单机版完全一致（不能因为加功能把老用法搞坏）
   2. 开了口令后，外人看不到任何数据，猜不到别人的任务
   3. 改模型配置这条路，外人怎么都进不来
+
+测试用独立的临时数据库：绝不能把测试数据写进你自己的 data/app.db。
 """
 
 from __future__ import annotations
 
+import os
+import tempfile
 import unittest
 
-from fastapi.testclient import TestClient
-from starlette.requests import Request
+# 必须在 import app 之前设：store 的 DB_PATH 是导入时就算好的
+os.environ["CA_DB"] = os.path.join(tempfile.gettempdir(), f"ca_test_{os.getpid()}.db")
+os.environ["WORKER_INLINE"] = "0"      # 测试里不要起后台 worker
+os.environ["CA_LOG"] = "0"
 
-import app as app_mod
-from core import access
+from fastapi.testclient import TestClient          # noqa: E402
+from starlette.requests import Request             # noqa: E402
+
+import app as app_mod                              # noqa: E402
+from core import access, store                     # noqa: E402
+
+# 建表。lifespan 里也会调一次，init 是幂等的
+store.init()
 
 LOCAL = ("127.0.0.1", 50000)
 REMOTE = ("203.0.113.7", 50000)     # 文档专用网段，不会撞上真实内网
@@ -130,12 +142,16 @@ class OwnerTest(Base):
         # 两个口令 = 两个人。一个口令时所有人共用归属 id，隔离等于没做
         access.CODE = "code-a,code-b"
         self.tid = "testownertask"
-        app_mod.TASKS[self.tid] = {"status": "done", "step": "完成", "progress": 100,
-                                   "result": {"meta": {}}, "error": "",
-                                   "owner": access.owner_of("code-a")}
+        owner = access.owner_of("code-a")
+        store.create_task(self.tid, owner=owner)
+        store.update_task(self.tid, status="done", step="完成", progress=100)
+        store.save_session(self.tid, owner, {"meta": {}, "knowledge": {"stats": {"count": 1}}})
 
     def tearDown(self):
-        app_mod.TASKS.pop(self.tid, None)
+        # 清掉，避免影响后面的用例
+        with store.tx() as conn:
+            conn.execute("DELETE FROM tasks WHERE id=?", (self.tid,))
+            conn.execute("DELETE FROM sessions WHERE id=?", (self.tid,))
         super().tearDown()
 
     def test_other_code_cannot_read_task(self):
@@ -146,6 +162,18 @@ class OwnerTest(Base):
     def test_own_task_visible(self):
         with client() as c:
             self.assertEqual(c.get(f"/api/task/{self.tid}?k=code-a").status_code, 200)
+
+    def test_other_code_cannot_read_result(self):
+        """历史隔离不能只挡任务状态，结果本身也要挡。"""
+        with client() as c:
+            self.assertEqual(c.get(f"/api/result/{self.tid}?k=code-b").status_code, 404)
+            self.assertEqual(c.get(f"/api/result-by-id/{self.tid}?k=code-b").status_code, 404)
+            self.assertEqual(c.get(f"/api/result-by-id/{self.tid}?k=code-a").status_code, 200)
+
+    def test_history_only_lists_own(self):
+        with client() as c:
+            ids = [x["id"] for x in c.get("/api/history?k=code-b").json()]
+        self.assertNotIn(self.tid, ids)
 
     def test_two_codes_mean_two_owners(self):
         self.assertNotEqual(access.owner_of("code-a"), access.owner_of("code-b"))
