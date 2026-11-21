@@ -1,0 +1,21 @@
+# 模型配置：里面是 API key，绝不能提交
+config.json
+
+# 运行时数据：上传的课程资料与每次分析结果，属于个人内容
+data/
+
+# 临时验证脚本
+_tmp_*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

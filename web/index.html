@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>课程助手 · 按考试时间倒排的复习计划</title>
+<style>
+:root{
+  --bg:#f6f6f4; --card:#fff; --line:#e4e3df;
+  --ink:#1d1d1b; --ink2:#5a5955; --ink3:#8d8b85;
+  --teal:#0f8c6b; --teal-bg:#e3f5ef;
+  --blue:#2b7fc4; --blue-bg:#e9f3fb;
+  --purple:#6b5fd6; --purple-bg:#efedfc;
+  --amber:#b5751a; --amber-bg:#fbf0dc;
+  --red:#c0433c; --red-bg:#fceceb;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;font-size:14.5px;line-height:1.7;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:40px 24px 80px}
+.hidden{display:none!important}
+
+header{margin-bottom:32px}
+h1{font-size:23px;font-weight:600;letter-spacing:-.3px;margin-bottom:8px}
+.sub{color:var(--ink2);font-size:14px}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px}
+.card+.card{margin-top:16px}
+
+/* 上传 */
+.drop{border:1.5px dashed var(--line);border-radius:10px;padding:36px 20px;text-align:center;cursor:pointer;transition:.15s;background:#fbfbf9}
+.drop:hover,.drop.over{border-color:var(--teal);background:var(--teal-bg)}
+.drop .big{font-size:15px;font-weight:500;margin-bottom:6px}
+.drop .sm{font-size:12.5px;color:var(--ink3)}
+.drop-sm{margin-top:10px;padding:16px 20px;background:#fcfcfb}
+.drop-sm .big{font-size:13.5px;font-weight:500}
+.drop-sm .sm{font-size:12px}
+.drop .picked{margin-top:12px;font-size:13px;color:var(--ink2);text-align:left;cursor:default}
+.pk-head{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--teal);font-weight:500;padding-bottom:6px}
+.pk-clear{color:var(--ink3);font-weight:400;cursor:pointer}
+.pk-clear:hover{color:var(--red)}
+.pk-row{display:flex;align-items:center;gap:10px;padding:5px 0;border-top:1px dashed var(--line);font-size:12.8px}
+.pk-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink2)}
+.pk-size{color:var(--ink3);font-size:12px;white-space:nowrap}
+.pk-del{color:var(--ink3);font-size:12px;cursor:pointer;white-space:nowrap}
+.pk-del:hover{color:var(--red)}
+.pk-warn{padding-top:6px;font-size:12px;color:var(--red)}
+
+.form{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:20px}
+.field label{display:block;font-size:12.5px;color:var(--ink3);margin-bottom:6px}
+.field input,.field select{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:14px;font-family:inherit;background:#fbfbf9;color:var(--ink);outline:none}
+.field input:focus,.field select:focus{border-color:var(--teal);background:#fff}
+
+.btn{background:var(--ink);color:#fff;border:none;border-radius:8px;padding:11px 26px;font-size:14px;font-weight:500;font-family:inherit;cursor:pointer;transition:.15s}
+.btn:hover{background:#33332f}
+.btn:disabled{background:#c9c8c2;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--ink2);border:1px solid var(--line)}
+.btn.ghost:hover{background:#f2f1ed;color:var(--ink)}
+.actions{display:flex;gap:12px;align-items:center;margin-top:22px}
+
+.hint{font-size:12.5px;color:var(--ink3)}
+.warn{background:var(--amber-bg);border-left:3px solid var(--amber);padding:10px 14px;border-radius:0 7px 7px 0;font-size:13px;color:#6b4a10;margin-top:16px}
+.err{background:var(--red-bg);border-left:3px solid var(--red);padding:12px 16px;border-radius:0 7px 7px 0;font-size:13.5px;color:#7d2b26;margin-top:16px}
+
+/* 进度 */
+.steps{margin-top:6px}
+.step{display:flex;align-items:center;gap:12px;padding:7px 0;font-size:13.5px;color:var(--ink3)}
+.step .dot{width:9px;height:9px;border-radius:50%;background:#dcdad4;flex:none}
+.step.active{color:var(--ink);font-weight:500}
+.step.active .dot{background:var(--teal);animation:pulse 1.2s infinite}
+.step.done{color:var(--ink2)}
+.step.done .dot{background:var(--teal);opacity:.45}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.bar{height:5px;background:#ecebe6;border-radius:3px;overflow:hidden;margin:18px 0 14px}
+.bar>i{display:block;height:100%;background:var(--teal);border-radius:3px;transition:width .4s}
+
+/* 概览 */
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.stat .n{font-size:22px;font-weight:600;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.stat .l{font-size:12px;color:var(--ink3);margin-top:2px}
+.stat.hi .n{color:var(--teal)}
+.stat.warn2 .n{color:var(--amber)}
+
+/* 策略 */
+.strategy{border-left:3px solid var(--teal);background:var(--teal-bg);padding:14px 18px;border-radius:0 8px 8px 0;font-size:13.8px;color:#08493a}
+.strategy b{display:block;margin-bottom:4px;font-size:14px}
+
+/* 日程 */
+.timeline{margin-top:8px}
+.day{background:var(--card);border:1px solid var(--line);border-radius:11px;margin-bottom:10px;overflow:hidden}
+.day-head{display:flex;align-items:center;gap:14px;padding:14px 18px;cursor:pointer;user-select:none}
+.day-head:hover{background:#fbfbf9}
+.dnum{width:52px;flex:none;font-size:12px;color:var(--ink3);font-variant-numeric:tabular-nums}
+.dtheme{flex:1;font-weight:500;font-size:14px}
+.dmin{font-size:12.5px;color:var(--ink3);font-variant-numeric:tabular-nums;flex:none}
+.chev{width:16px;text-align:center;color:var(--ink3);flex:none;transition:.2s;font-size:11px}
+.day.open .chev{transform:rotate(90deg)}
+.day.mock .dtheme{color:var(--purple)}
+.day.review{border-style:dashed;background:#fbfbf9}
+.day.review .day-head{padding:10px 18px}
+.day.review .dtheme{font-size:13px;color:var(--ink2);font-weight:400}
+.day.review .dmin{font-size:12px}
+
+.day-body{display:none;padding:0 18px 18px;border-top:1px solid var(--line)}
+.day.open .day-body{display:block}
+.goal{background:#fbfbf9;border-radius:8px;padding:11px 14px;font-size:13.2px;color:var(--ink2);margin:14px 0 4px}
+.goal b{color:var(--ink);font-weight:500}
+
+.item{padding:13px 0;border-bottom:1px dashed var(--line)}
+.item:last-child{border-bottom:none}
+.item-top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:5px}
+.iname{font-weight:500;font-size:14px}
+.pill{font-size:11px;padding:1px 8px;border-radius:20px;font-weight:500}
+.pill.jing{background:var(--teal-bg);color:var(--teal)}
+.pill.biao{background:var(--blue-bg);color:var(--blue)}
+.pill.su{background:#f0efeb;color:var(--ink3)}
+.pill.qian{background:var(--amber-bg);color:var(--amber)}
+.pill.exampill{background:#fbeee6;color:#a24a1d}
+.pill.covpill{background:#eee9fb;color:#5a3fa8}
+.mergelist{margin-top:8px;font-size:12px;color:var(--ink3);line-height:1.9}
+.mergelist b{color:var(--ink2);font-weight:500}
+.mergelist .arrow{color:var(--teal);margin:0 4px}
+.itag{font-size:11.5px;color:var(--ink3);font-variant-numeric:tabular-nums}
+.iline{font-size:13.2px;color:var(--ink2);margin-top:3px;display:flex;gap:8px}
+.iline .k{color:var(--ink3);flex:none;width:44px;font-size:12.5px}
+.iline.how .v{color:var(--ink)}
+.iline.pit .v{color:#8a4a1e}
+.iline.exam{font-size:12.5px}
+.iline.exam .k{color:#a24a1d}
+.iline.exam .v{color:#7a4020}
+.review{margin-top:12px;font-size:12.5px;color:var(--ink3)}
+.vid{display:flex;gap:9px;align-items:baseline;margin-top:8px;padding:8px 11px;background:#f6f7fb;border-radius:6px;text-decoration:none;color:var(--ink);font-size:13px;line-height:1.45;transition:background .15s}
+.vid:hover{background:#eceffa}
+.vplay{color:var(--blue);font-size:10px;flex:none}
+.vtitle{flex:1;min-width:0}
+.vmeta{color:var(--ink3);font-size:11.5px;flex:none;white-space:nowrap}
+.vhead{font-size:12px;color:var(--ink3);margin-top:10px}
+
+/* 侧栏 */
+.grid2{display:grid;grid-template-columns:1fr 340px;gap:16px;align-items:start;margin-top:16px}
+.side .card+.card{margin-top:14px}
+.side h3{font-size:14px;font-weight:600;margin-bottom:12px}
+.res{padding:10px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.res:last-child{border-bottom:none}
+.res .rt{font-weight:500;margin-bottom:2px}
+.res .rd{color:var(--ink3);font-size:12.5px}
+.res .re{color:var(--ink2);font-size:12.5px;margin-top:3px;padding-left:9px;border-left:2px solid var(--line)}
+.tag-int{font-size:10.5px;background:var(--blue-bg);color:var(--blue);padding:1px 6px;border-radius:4px;margin-right:6px}
+.tag-ext{font-size:10.5px;background:var(--purple-bg);color:var(--purple);padding:1px 6px;border-radius:4px;margin-right:6px}
+.drop-item{font-size:12.8px;color:var(--ink2);padding:6px 0;border-bottom:1px dashed var(--line)}
+.drop-item:last-child{border-bottom:none}
+.drop-item .r{color:var(--ink3);font-size:12px}
+
+/* 重算 */
+.recalc{display:flex;gap:10px;align-items:flex-end;margin-top:16px;flex-wrap:wrap}
+.recalc .field{flex:1;min-width:140px}
+
+footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink3)}
+
+@media(max-width:860px){
+  .form{grid-template-columns:1fr}
+  .grid2{grid-template-columns:1fr}
+  .stat-row{grid-template-columns:repeat(2,1fr)}
+  .wrap{padding:24px 16px 60px}
+  .dnum{width:44px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>课程助手</h1>
+  <p class="sub">上传老师讲的资料，按距离考试的时间倒排一份能执行的复习计划。时间越紧，放弃的越多，剩下的越准。</p>
+</header>
+
+<!-- 表单 -->
+<section id="formCard" class="card">
+  <div class="drop" id="drop">
+    <div class="big">把课程资料拖到这里，或点击选择</div>
+    <div class="sm">支持 PDF / PPTX / TXT / Markdown · 可多选，最多 10 份</div>
+    <div class="picked hidden" id="picked"></div>
+    <input type="file" id="file" accept=".pdf,.pptx,.ppt,.txt,.md" multiple style="display:none">
+  </div>
+
+  <div class="drop drop-sm" id="examDrop">
+    <div class="big">历年真题（可选）</div>
+    <div class="sm">有真题就传：它会把「考频」从模型猜测变成有出处的证据，冲刺时优先保命</div>
+    <div class="picked hidden" id="examPicked"></div>
+    <input type="file" id="examFile" accept=".pdf,.pptx,.ppt,.txt,.md" multiple style="display:none">
+  </div>
+
+  <div class="form">
+    <div class="field">
+      <label>课程名称</label>
+      <input id="course" placeholder="例如：信号与系统">
+    </div>
+    <div class="field">
+      <label>考试日期</label>
+      <input id="examDate" type="date">
+    </div>
+    <div class="field">
+      <label>每天可投入（分钟）</label>
+      <input id="mpd" type="number" value="120" min="30" max="600" step="30">
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn" id="go">生成复习计划</button>
+    <span class="hint" id="cfgHint"></span>
+  </div>
+
+  <div id="formErr" class="err hidden"></div>
+</section>
+
+<!-- 模型配置 -->
+<section id="cfgCard" class="card hidden">
+  <h3 style="font-size:15px;font-weight:600;margin-bottom:6px">模型配置</h3>
+  <p class="hint" style="margin-bottom:16px">支持任何 OpenAI 兼容接口。填完先点「测试连接」，显示可用再保存。key 只存在本机 <code>config.json</code>，不会上传到任何地方。</p>
+
+  <div class="form" style="grid-template-columns:200px 1fr;margin-top:0">
+    <div class="field">
+      <label>服务商（自动填地址）</label>
+      <select id="cfgPreset">
+        <option value="">自定义</option>
+        <option value="https://open.bigmodel.cn/api/paas/v4|glm-4-flash">智谱 GLM-4-Flash（免费）</option>
+        <option value="https://api.deepseek.com/v1|deepseek-chat">DeepSeek（便宜）</option>
+        <option value="https://dashscope.aliyuncs.com/compatible-mode/v1|qwen-plus">通义千问</option>
+        <option value="https://api.moonshot.cn/v1|moonshot-v1-8k">Kimi</option>
+        <option value="http://127.0.0.1:11434/v1|qwen2.5:7b">本地 Ollama</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>API 地址 base_url</label>
+      <input id="cfgUrl" placeholder="https://api.deepseek.com/v1">
+    </div>
+    <div class="field">
+      <label>模型名</label>
+      <input id="cfgModel" placeholder="deepseek-chat">
+    </div>
+    <div class="field">
+      <label>API Key</label>
+      <input id="cfgKey" type="password" placeholder="sk-..." autocomplete="off">
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn ghost" id="cfgTest">测试连接</button>
+    <button class="btn" id="cfgSave">保存</button>
+    <button class="btn ghost" id="cfgClose" style="margin-left:auto">收起</button>
+  </div>
+  <div id="cfgMsg" class="hint" style="margin-top:12px"></div>
+</section>
+
+<!-- 进度 -->
+<section id="progCard" class="card hidden">
+  <div class="bar"><i id="bar" style="width:0%"></i></div>
+  <div class="steps" id="steps"></div>
+</section>
+
+<!-- 结果 -->
+<section id="result" class="hidden">
+  <div class="stat-row" id="stats"></div>
+  <div class="strategy" id="strategy"></div>
+
+  <div class="grid2">
+    <div>
+      <div class="timeline" id="timeline"></div>
+    </div>
+    <div class="side">
+      <div class="card">
+        <h3>快速重算</h3>
+        <p class="hint" style="margin-bottom:12px">只改时间预算，知识点和排期逻辑不变。这是这个工具最有用的地方：同一份资料，7 天和 30 天给的答案完全不同。</p>
+        <div class="recalc">
+          <div class="field">
+            <label>新的考试日期</label>
+            <input id="newExam" type="date">
+          </div>
+          <div class="field" style="max-width:110px">
+            <label>每天分钟</label>
+            <input id="newMpd" type="number" value="120" min="30" max="600" step="30">
+          </div>
+          <button class="btn ghost" id="recalc">重算</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>资源建议</h3>
+        <div id="resources"></div>
+      </div>
+      <div class="card">
+        <h3>本次放弃的内容</h3>
+        <div id="dropped"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>课程助手 · 本地运行 · 知识点与排期可溯源到原文段落</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let currentTask = null, currentResult = null;
+let pollTimer = null;
+
+const todayPlus = n => {
+  const d = new Date(); d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+$('examDate').value = todayPlus(7);
+$('newExam').value = todayPlus(7);
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// 配置状态
+function refreshCfgHint() {
+  fetch('/api/config').then(r => r.json()).then(c => {
+    $('cfgHint').innerHTML = c.llm_available
+      ? `模型：<b>${esc(c.model)}</b> · <a href="#" id="openCfg" style="color:var(--teal)">修改</a>`
+      : `未配置模型（规则模式）· <a href="#" id="openCfg" style="color:var(--teal)">点这里填 key</a>`;
+    const a = $('openCfg');
+    if (a) a.onclick = e => { e.preventDefault(); toggleCfg(true); };
+  }).catch(() => {});
+}
+refreshCfgHint();
+
+function toggleCfg(show) {
+  const card = $('cfgCard');
+  if (show === undefined) show = card.classList.contains('hidden');
+  card.classList.toggle('hidden', !show);
+  if (show) {
+    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    $('cfgUrl').focus();
+  }
+}
+$('cfgClose').onclick = () => toggleCfg(false);
+
+// 选服务商时自动填地址和模型
+$('cfgPreset').onchange = e => {
+  const v = e.target.value;
+  if (!v) return;
+  const [url, model] = v.split('|');
+  $('cfgUrl').value = url;
+  $('cfgModel').value = model;
+};
+
+$('cfgTest').onclick = async () => {
+  const msg = $('cfgMsg');
+  const body = {
+    api_key: $('cfgKey').value.trim(),
+    base_url: $('cfgUrl').value.trim(),
+    model: $('cfgModel').value.trim(),
+  };
+  if (!body.api_key) { msg.textContent = '请先填 API Key'; msg.style.color = 'var(--red)'; return; }
+  msg.style.color = 'var(--ink3)';
+  msg.textContent = '正在请求模型...';
+  try {
+    const r = await fetch('/api/config/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    msg.textContent = d.ok ? `可用 · ${d.model} 回复：「${d.reply}」` : `失败 · ${d.error}`;
+    msg.style.color = d.ok ? 'var(--teal)' : 'var(--red)';
+  } catch (e) {
+    msg.textContent = '请求出错：' + e.message;
+    msg.style.color = 'var(--red)';
+  }
+};
+
+$('cfgSave').onclick = async () => {
+  const msg = $('cfgMsg');
+  const body = {
+    api_key: $('cfgKey').value.trim(),
+    base_url: $('cfgUrl').value.trim(),
+    model: $('cfgModel').value.trim(),
+  };
+  if (!body.api_key) { msg.textContent = 'API Key 不能为空'; msg.style.color = 'var(--red)'; return; }
+  try {
+    const r = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '保存失败');
+    msg.textContent = d.llm_available ? `已保存，当前模型：${d.model}` : '已保存，但配置不完整';
+    msg.style.color = d.llm_available ? 'var(--teal)' : 'var(--amber)';
+    refreshCfgHint();
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.style.color = 'var(--red)';
+  }
+};
+
+// 上传
+const drop = $('drop'), fileInput = $('file');
+const MAX_FILES = 10;
+const OK_EXT = ['.pdf', '.pptx', '.ppt', '.txt', '.md'];
+
+// 两套上传区共用一套逻辑：资料和真题只是字段名和上限不同
+function makePicker({ dropId, inputId, pickedId, max, onFirst, tip }) {
+  const box = $(dropId), input = $(inputId), out = $(pickedId);
+  const state = { files: [] };
+
+  box.addEventListener('click', () => input.click());
+  box.addEventListener('dragover', e => { e.preventDefault(); box.classList.add('over'); });
+  box.addEventListener('dragleave', () => box.classList.remove('over'));
+  box.addEventListener('drop', e => {
+    e.preventDefault(); box.classList.remove('over');
+    if (e.dataTransfer.files.length) add(e.dataTransfer.files);
+  });
+  input.addEventListener('change', () => {
+    if (input.files.length) add(input.files);
+    input.value = '';   // 清空，否则同一文件第二次选不上
+  });
+
+  // 累加而不是覆盖：分几次拖进来也能凑齐
+  function add(list) {
+    const skipped = [];
+    for (const f of list) {
+      const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
+      if (!OK_EXT.includes(ext)) { skipped.push(`${f.name}（格式不支持）`); continue; }
+      if (state.files.some(x => x.name === f.name && x.size === f.size)) continue;
+      state.files.push(f);
+    }
+    if (state.files.length > max) {
+      state.files = state.files.slice(0, max);
+      skipped.push(`最多 ${max} 份，多余已忽略`);
+    }
+    render(skipped);
+    if (state.files.length && onFirst) onFirst(state.files[0]);
+  }
+
+  function render(skipped = []) {
+    if (!state.files.length) { out.classList.add('hidden'); out.innerHTML = ''; return; }
+    const total = state.files.reduce((s, f) => s + f.size, 0);
+    out.classList.remove('hidden');
+    out.innerHTML = `
+      <div class="pk-head">
+        <span>已选 ${state.files.length} 份 · 共 ${(total / 1024 / 1024).toFixed(2)} MB</span>
+        <span class="pk-clear">全部清空</span>
+      </div>
+      ${state.files.map((f, i) => `
+        <div class="pk-row">
+          <span class="pk-name">${esc(f.name)}</span>
+          <span class="pk-size">${(f.size / 1024).toFixed(0)} KB</span>
+          <span class="pk-del" data-i="${i}">移除</span>
+        </div>`).join('')}
+      ${skipped.length ? `<div class="pk-warn">已跳过：${skipped.map(esc).join('、')}</div>` : ''}`;
+
+    out.querySelector('.pk-clear').onclick = ev => {
+      ev.stopPropagation();
+      state.files = [];
+      render();
+    };
+    out.querySelectorAll('.pk-del').forEach(b => {
+      b.onclick = ev => {
+        ev.stopPropagation();       // 别冒泡到 drop，否则会弹出选择框
+        state.files.splice(+b.dataset.i, 1);
+        render();
+      };
+    });
+  }
+
+  return state;
+}
+
+const materialPicker = makePicker({
+  dropId: 'drop', inputId: 'file', pickedId: 'picked', max: 10,
+  // 课程名留空时用第一份文件的名字
+  onFirst: f => {
+    if (!$('course').value.trim()) $('course').value = f.name.replace(/\.[^.]+$/, '');
+  },
+});
+
+const examPicker = makePicker({
+  dropId: 'examDrop', inputId: 'examFile', pickedId: 'examPicked', max: 5,
+});
+
+// 提交
+$('go').addEventListener('click', async () => {
+  const err = $('formErr');
+  err.classList.add('hidden');
+
+  if (!materialPicker.files.length) return showErr('请先选择资料文件，可多选');
+  if (!$('examDate').value) return showErr('请填写考试日期');
+
+  const fd = new FormData();
+  materialPicker.files.forEach(f => fd.append('files', f));
+  examPicker.files.forEach(f => fd.append('exam_files', f));
+  fd.append('course', $('course').value.trim());
+  fd.append('exam_date', $('examDate').value);
+  fd.append('minutes_per_day', $('mpd').value || 120);
+
+  $('go').disabled = true;
+  $('formCard').classList.add('hidden');
+  $('result').classList.add('hidden');
+  $('progCard').classList.remove('hidden');
+  renderSteps(0, '');
+
+  try {
+    const r = await fetch('/api/analyze', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error((await r.json()).detail || '提交失败');
+    const { task_id } = await r.json();
+    currentTask = task_id;
+    poll();
+  } catch (e) {
+    $('progCard').classList.add('hidden');
+    $('formCard').classList.remove('hidden');
+    $('go').disabled = false;
+    showErr(e.message);
+  }
+});
+
+function showErr(msg) {
+  const el = $('formErr');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+const STEPS = ['解析文档', '抽取知识点', '排定计划', '生成学习说明', '整理资源建议', '完成'];
+
+function renderSteps(progress, current) {
+  const idx = STEPS.findIndex(s => s === current);
+  $('bar').style.width = progress + '%';
+  $('steps').innerHTML = STEPS.map((s, i) => {
+    let cls = 'step';
+    if (idx === -1) cls += '';
+    else if (i < idx) cls += ' done';
+    else if (i === idx) cls += ' active';
+    return `<div class="${cls}"><span class="dot"></span><span>${esc(s)}</span></div>`;
+  }).join('');
+}
+
+function poll() {
+  clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try {
+      const t = await (await fetch(`/api/task/${currentTask}`)).json();
+      renderSteps(t.progress, t.step);
+
+      if (t.status === 'error') {
+        clearInterval(pollTimer);
+        $('progCard').classList.add('hidden');
+        $('formCard').classList.remove('hidden');
+        $('go').disabled = false;
+        showErr('处理失败：' + t.error);
+        return;
+      }
+      if (t.status === 'done') {
+        clearInterval(pollTimer);
+        const r = await (await fetch(`/api/result/${currentTask}`)).json();
+        currentResult = r;
+        $('progCard').classList.add('hidden');
+        render(r);
+      }
+    } catch (e) { /* 网络抖动，继续轮询 */ }
+  }, 900);
+}
+
+// 渲染
+function render(r) {
+  const plan = r.plan, kn = r.knowledge;
+  $('result').classList.remove('hidden');
+  $('newExam').value = plan.exam_date;
+  $('newMpd').value = plan.minutes_per_day;
+
+  $('stats').innerHTML = [
+    ['剩余天数', plan.days_left, ''],
+    ['知识点', `${plan.summary.kept}`, 'hi'],
+    ['预计总时长', `${Math.round(plan.summary.total_minutes / 60)} 小时`, ''],
+    ['时间负荷', `${plan.summary.load_ratio}×`, plan.summary.load_ratio > 1 ? 'warn2' : ''],
+  ].map(([l, n, c]) => `<div class="stat ${c}"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join('');
+
+  const modeNote = r.meta.llm_mode === 'rule'
+    ? `<div style="margin-top:8px;font-size:12.5px;color:#6b4a10">${esc(r.meta.llm_note)}</div>` : '';
+
+  // 真题那一行：有真题时显示命中比例，这是整份计划里最硬的证据
+  const ex = r.exam || {};
+  let examNote = '';
+  if (ex.enabled) {
+    const fn = (ex.files || []).map(f => f.name).join('、');
+    examNote = `<div style="margin-top:8px;font-size:12.5px;color:var(--teal)">
+      真题已比对（${esc(fn)}）：${ex.covered} 个知识点里 <b>${ex.hits} 个</b>在真题中出现过，考频已按证据上调。
+      <span style="color:var(--ink3)">${esc(ex.note)}</span>
+    </div>`;
+  } else if (ex.note) {
+    examNote = `<div style="margin-top:8px;font-size:12.5px;color:var(--red)">${esc(ex.note)}</div>`;
+  }
+
+  const fl = r.meta.files || [];
+  const vd = r.videos || {};
+  const videoNote = (vd.enabled && vd.found)
+    ? `<div style="margin-top:8px;font-size:12.5px;color:var(--ink3)">已为 <b>${vd.found}/${vd.searched}</b> 个重点知识点找到配套视频（B 站，按时长与内容相关度筛过，不是按播放量推的）${vd.missing ? `；另外 ${vd.missing} 个没找到足够相关的，宁可不给` : ''}</div>`
+    : (vd.note ? `<div style="margin-top:8px;font-size:12.5px;color:var(--ink3)">${esc(vd.note)}</div>` : '');
+  const mg = kn.merge || {};
+  let fileNote = '';
+  if (fl.length > 1) {
+    const parts = [`资料 ${fl.length} 份：${fl.map(f => `${esc(f.name)}（${f.chunks} 段）`).join('、')}`];
+    if (mg.merged_count) parts.push(`合并了 <b>${mg.merged_count}</b> 个换种叫法的重复知识点`);
+    if (mg.multi_source_count) parts.push(`<b>${mg.multi_source_count}</b> 个知识点在多份资料里重复出现，已在排序中加权`);
+    const groups = (mg.merged_groups || []).slice(0, 8)
+      .map(g => `<div><b>${esc(g.keep)}</b><span class="arrow">←</span>${esc(g.drop.join('、'))}</div>`).join('');
+    fileNote = `<div style="margin-top:8px;font-size:12.5px;color:var(--ink3)">${parts.join('　·　')}</div>`
+      + (groups ? `<div class="mergelist">${groups}${(mg.merged_groups || []).length > 8 ? '<div>…</div>' : ''}</div>` : '');
+    if (mg.note) fileNote += `<div style="margin-top:4px;font-size:12px;color:var(--ink3)">${esc(mg.note)}</div>`;
+    // 模型提过但被字面校验拦下的合并：留痕，用户能质疑
+    const rej = mg.rejected || [];
+    if (rej.length) {
+      fileNote += `<div class="mergelist">模型建议合并、但判定为不同的概念（已保留为两个知识点）：`
+        + rej.slice(0, 5).map(g => `<div><b>${esc(g.keep)}</b> <span style="color:var(--red)">≠</span> ${esc(g.drop.join('、'))}</div>`).join('')
+        + `</div>`;
+    }
+  }
+  const skipNote = (r.meta.skipped || []).length
+    ? `<div style="margin-top:6px;font-size:12.5px;color:var(--red)">未解析：${r.meta.skipped.map(s => esc(s.file)).join('、')}</div>` : '';
+
+  $('strategy').innerHTML = `<b>${esc(plan.mode_label)}</b>${esc(plan.summary.strategy)}
+    <div style="margin-top:6px;font-size:12.5px;opacity:.8">
+      共 ${plan.summary.kept} 个知识点需学，放弃 ${plan.summary.dropped} 个；
+      按每天 ${plan.minutes_per_day} 分钟、其中 20% 用于回顾计算。
+    </div>${videoNote}${examNote}${fileNote}${skipNote}${modeNote}`;
+
+  $('timeline').innerHTML = plan.days.map((d, i) => renderDay(d, i === 0)).join('');
+  document.querySelectorAll('.day-head').forEach(h => {
+    h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
+  });
+
+  $('resources').innerHTML = (plan.resources || []).map(x => `
+    <div class="res">
+      <div class="rt"><span class="${x.type === 'internal' ? 'tag-int' : 'tag-ext'}">${x.type === 'internal' ? '资料原文' : '外部检索'}</span>${esc(x.title)}</div>
+      <div class="rd">${esc(x.detail)}</div>
+      <div class="re">${esc(x.excerpt)}</div>
+    </div>`).join('') || '<div class="hint">无</div>';
+
+  $('dropped').innerHTML = plan.dropped.length
+    ? plan.dropped.map(x => `<div class="drop-item">${esc(x.name)}<div class="r">${esc(x.reason)}</div></div>`).join('')
+    : '<div class="hint">时间足够，没有放弃任何内容。</div>';
+}
+
+function fmtPlay(n) {
+  n = n || 0;
+  if (n >= 10000) return (n / 10000).toFixed(1).replace('.0', '') + ' 万播放';
+  return n + ' 播放';
+}
+
+function renderDay(d, open) {
+  const lvl = l => l.startsWith('精') ? 'jing' : (l.startsWith('标准') ? 'biao' : (l.startsWith('速览（') ? 'qian' : 'su'));
+  const emptyHint = d.type === 'mock'
+    ? '考前最后一天：只看错题、公式和最容易混的三个点，不要再碰新内容。'
+    : (d.type === 'review'
+        ? '今天不安排新内容。按下面的顺序做间隔回顾：合上讲义，先自己回忆，再翻回去核对。这一步比多学一个新知识点更值。'
+        : '今天不安排新内容，用于自测与查漏。');
+
+  const items = d.items.map(it => `
+    <div class="item">
+      <div class="item-top">
+        <span class="iname">${esc(it.name)}</span>
+        ${it.exam_hits ? `<span class="pill exampill">真题命中</span>` : ''}
+        ${(it.coverage || 1) >= 2 ? `<span class="pill covpill" title="${esc((it.files || []).join('、'))}">${it.coverage} 份资料</span>` : ''}
+        <span class="pill ${lvl(it.level)}">${esc(it.level)}</span>
+        <span class="itag">${it.minutes} 分钟 · 重要 ${it.importance} · 考频 ${it.exam_freq} · 难度 ${it.difficulty}</span>
+      </div>
+      ${(it.coverage || 1) >= 2 ? `<div class="iline"><span class="k">出处</span><span class="v">${esc((it.files || []).join(' / '))} 都讲到</span></div>` : ''}
+      ${(it.exam_evidence || []).map(e => `<div class="iline exam"><span class="k">真题</span><span class="v">${esc(e.snippet)}</span></div>`).join('')}
+      ${it.why ? `<div class="iline"><span class="k">为什么</span><span class="v">${esc(it.why)}</span></div>` : ''}
+      ${it.how ? `<div class="iline how"><span class="k">怎么学</span><span class="v">${esc(it.how)}</span></div>` : ''}
+      ${it.pitfall ? `<div class="iline pit"><span class="k">易错点</span><span class="v">${esc(it.pitfall)}</span></div>` : ''}
+      ${(it.videos || []).length ? `<div class="vhead">配套视频</div>` : ''}
+      ${(it.videos || []).map(v => `<a class="vid" href="${esc(v.url)}" target="_blank" rel="noopener noreferrer">
+        <span class="vplay">▶</span>
+        <span class="vtitle">${esc(v.title)}</span>
+        <span class="vmeta">${esc(v.author || '')}${v.duration ? ' · ' + esc(v.duration) : ''} · ${fmtPlay(v.play)}</span>
+      </a>`).join('')}
+    </div>`).join('') || `<div class="hint" style="padding:12px 0">${emptyHint}</div>`;
+
+  const review = d.review && d.review.length
+    ? `<div class="review">先花 10 分钟回顾：${d.review.map(x => esc(x.name)).join('、')}</div>` : '';
+
+  return `<div class="day ${open ? 'open' : ''} ${d.type}">
+    <div class="day-head">
+      <span class="dnum">${esc(d.date.slice(5))}</span>
+      <span class="dtheme">${esc(d.theme)}</span>
+      <span class="dmin">${d.total_minutes} 分钟</span>
+      <span class="chev">▶</span>
+    </div>
+    <div class="day-body">
+      ${d.goal ? `<div class="goal"><b>今日目标：</b>${esc(d.goal)}</div>` : ''}
+      ${review}
+      ${items}
+    </div>
+  </div>`;
+}
+
+// 重算
+$('recalc').addEventListener('click', async () => {
+  if (!currentTask) return;
+  const btn = $('recalc');
+  btn.disabled = true; btn.textContent = '计算中';
+  try {
+    const r = await fetch('/api/rerun', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task_id: currentTask,
+        exam_date: $('newExam').value,
+        minutes_per_day: $('newMpd').value || 120,
+      }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || '重算失败');
+    const data = await r.json();
+    currentResult = data;
+    render(data);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '重算';
+  }
+});
+</script>
+</body>
+</html>
