@@ -9,22 +9,22 @@
 
 ## 一、怎么跑
 
+需要 Python 3.10 以上。
+
 ```bash
-cd D:/career_plan/course-assistant
+git clone https://github.com/42-beep/course-assistant.git
+cd course-assistant
+python -m pip install -r requirements.txt
 python -m uvicorn app:app --port 8000
 ```
 
-打开 http://127.0.0.1:8000
+打开 http://127.0.0.1:8000 。Windows 下也可以直接双击 `run.bat`。
 
-Windows 下也可以直接双击 `run.bat`。
+**不配模型也能跑**（走规则模式，见下一节）；配了模型之后知识点粒度更细、
+每天的学习说明更具体。
 
-依赖已经装好了。如果换机器，先跑：
-
-```bash
-python -m pip install -r requirements.txt --index-url https://pypi.org/simple
-```
-
-> 注意：这台机器的 pip 默认指向清华源，但那个源取不到包，所以要显式加 `--index-url`。
+> 如果 `pip install` 卡在下载：`requirements.txt` 里的 `pymupdf` 在部分国内镜像上
+> 同步不全，加 `--index-url https://pypi.org/simple` 再试一次。
 
 ---
 
